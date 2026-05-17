@@ -111,7 +111,7 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: 36px 36px;
+      padding: 36px;
       gap: 20px;
     }
 
@@ -131,8 +131,6 @@
       color: #ff1a75;
       font-weight: 600;
     }
-
-    .viewers svg { flex-shrink: 0; }
 
     .subject {
       font-size: 13px;
@@ -204,9 +202,7 @@
 
     .refresh-btn:hover { color: #ccc; border-color: #444; }
 
-    .refresh-btn svg {
-      transition: transform 0.5s ease;
-    }
+    .refresh-btn svg { transition: transform 0.5s ease; }
 
     .refresh-btn.spinning svg {
       animation: spin 0.6s linear infinite;
@@ -230,8 +226,8 @@
     }
 
     .skeleton-thumb { width: 100%; height: 100%; border-radius: 0; }
-    .skeleton-text { height: 14px; margin-bottom: 8px; }
     .skeleton-title { height: 40px; width: 80%; margin-bottom: 16px; }
+    .skeleton-text { height: 14px; margin-bottom: 8px; }
 
     .error-state {
       display: flex;
@@ -242,6 +238,7 @@
       padding: 60px 40px;
       color: #555;
       text-align: center;
+      grid-column: 1 / -1;
     }
 
     .error-state p { font-size: 14px; }
@@ -293,28 +290,11 @@
   </main>
 
   <script>
-    async function fetchWithRetry(url, attempts = 2) {
-      for (let i = 0; i < attempts; i++) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 10000);
-        try {
-          const res = await fetch(url, { signal: controller.signal });
-          clearTimeout(timer);
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
-        } catch (err) {
-          clearTimeout(timer);
-          if (i === attempts - 1) throw err;
-          await new Promise(r => setTimeout(r, 800));
-        }
-      }
-    }
+    const API_URL = 'https://chaturbate.com/api/public/affiliates/onlinerooms/?wm=T2CSW&client_ip=request_ip&gender=f&limit=500';
+    const AFFILIATE_BASE = 'https://chaturbate.com/in/?tour=41Ea&campaign=T2CSW&track=default&room=';
 
-    async function loadRoom() {
-      const card = document.getElementById('card');
-      const roomCountEl = document.getElementById('room-count');
-
-      card.innerHTML = `
+    function showSkeleton() {
+      document.getElementById('card').innerHTML = `
         <div class="thumb-wrap">
           <div class="skeleton skeleton-thumb" style="height:100%;"></div>
         </div>
@@ -324,58 +304,80 @@
           <div class="skeleton skeleton-text" style="width:90%;"></div>
           <div class="skeleton skeleton-text" style="width:70%;"></div>
         </div>`;
+    }
+
+    async function loadRoom() {
+      showSkeleton();
+      document.getElementById('room-count').innerHTML = '';
 
       try {
-        const room = await fetchWithRetry('/api/random-room');
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
 
-        roomCountEl.innerHTML = `<span>${room.total_rooms.toLocaleString()}</span> rooms live`;
+        const rooms = (data.results || []).filter(r => r.gender === 'f');
+        if (!rooms.length) throw new Error('No rooms');
 
-        const tags = (room.tags || []).slice(0, 6).map(t =>
-          `<span class="tag">#${t}</span>`
-        ).join('');
-
-        card.innerHTML = `
-          <div class="thumb-wrap">
-            <img src="${room.image_url}" alt="${room.username}" loading="eager" />
-            <div class="thumb-overlay"></div>
-          </div>
-          <div class="info">
-            <div class="username" data-testid="text-username">${room.username}</div>
-            <div class="viewers">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-              ${room.num_users.toLocaleString()} watching
-            </div>
-            ${room.subject ? `<div class="subject">${room.subject}</div>` : ''}
-            ${tags ? `<div class="tags">${tags}</div>` : ''}
-            <a class="cta" href="${room.affiliate_url}" target="_blank" rel="noopener" data-testid="link-enter-room">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-              </svg>
-              Watch Live
-            </a>
-            <button class="refresh-btn" id="refresh-btn" onclick="refreshRoom(this)" data-testid="button-refresh">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-              </svg>
-              Next Room
-            </button>
-          </div>`;
-
+        const room = rooms[Math.floor(Math.random() * rooms.length)];
+        renderRoom(room, rooms.length);
       } catch (err) {
-        card.innerHTML = `
-          <div class="error-state" style="grid-column:1/-1;">
-            <p>Could not load a room right now.</p>
-            <button class="retry-btn" onclick="loadRoom()">Try Again</button>
-          </div>`;
-        roomCountEl.innerHTML = '';
+        showError();
       }
     }
 
-    function refreshRoom(btn) {
+    function renderRoom(room, total) {
+      document.getElementById('room-count').innerHTML =
+        `<span>${total.toLocaleString()}</span> rooms live`;
+
+      const img = room.image_url_360x270 || room.image_url || '';
+      const tags = (room.tags || []).slice(0, 6)
+        .map(t => `<span class="tag">#${t}</span>`).join('');
+      const subject = room.subject || '';
+      const viewers = (room.num_users || 0).toLocaleString();
+      const affiliateUrl = AFFILIATE_BASE + encodeURIComponent(room.username);
+
+      document.getElementById('card').innerHTML = `
+        <div class="thumb-wrap">
+          <img src="${img}" alt="${room.username}" loading="eager" />
+          <div class="thumb-overlay"></div>
+        </div>
+        <div class="info">
+          <div class="username">${room.username}</div>
+          <div class="viewers">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            ${viewers} watching
+          </div>
+          ${subject ? `<div class="subject">${subject}</div>` : ''}
+          ${tags ? `<div class="tags">${tags}</div>` : ''}
+          <a class="cta" href="${affiliateUrl}" target="_blank" rel="noopener">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            Watch Live
+          </a>
+          <button class="refresh-btn" id="refresh-btn" onclick="nextRoom(this)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            Next Room
+          </button>
+        </div>`;
+    }
+
+    function showError() {
+      document.getElementById('room-count').innerHTML = '';
+      document.getElementById('card').innerHTML = `
+        <div class="error-state">
+          <p>Could not load a room right now.</p>
+          <button class="retry-btn" onclick="loadRoom()">Try Again</button>
+        </div>`;
+    }
+
+    function nextRoom(btn) {
       btn.classList.add('spinning');
       loadRoom().finally(() => {
         const b = document.getElementById('refresh-btn');
@@ -388,4 +390,3 @@
 
 </body>
 </html>
-
