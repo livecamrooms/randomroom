@@ -293,6 +293,23 @@
   </main>
 
   <script>
+    async function fetchWithRetry(url, attempts = 2) {
+      for (let i = 0; i < attempts; i++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
+        try {
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timer);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        } catch (err) {
+          clearTimeout(timer);
+          if (i === attempts - 1) throw err;
+          await new Promise(r => setTimeout(r, 800));
+        }
+      }
+    }
+
     async function loadRoom() {
       const card = document.getElementById('card');
       const roomCountEl = document.getElementById('room-count');
@@ -309,9 +326,7 @@
         </div>`;
 
       try {
-        const res = await fetch('/api/random-room');
-        if (!res.ok) throw new Error('Failed to fetch room');
-        const room = await res.json();
+        const room = await fetchWithRetry('/api/random-room');
 
         roomCountEl.innerHTML = `<span>${room.total_rooms.toLocaleString()}</span> rooms live`;
 
@@ -373,3 +388,4 @@
 
 </body>
 </html>
+
